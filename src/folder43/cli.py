@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, names
-from .generator import apply_plan, build_plan
+from .generator import DIR, BuildPlan, apply_plan, build_plan, year_totals
 
 
 def _parse_date(value: str) -> dt.date:
@@ -32,12 +32,13 @@ def _today() -> dt.date:
     return dt.datetime.now(dt.timezone.utc).astimezone().date()
 
 
-def _print_year_summaries(plan):
-    for stats in plan.per_year:
-        print(
-            f"  {stats.year}: {stats.date_dirs} dated dirs, "
-            f"{stats.archive_dirs} archive dirs, {stats.txt_files} txt files"
-        )
+def _kind_word(kind: str) -> str:
+    return "dir" if kind == DIR else "txt"
+
+
+def _print_year_summaries(plan: BuildPlan) -> None:
+    for year, count in year_totals(plan):
+        print(f"  {year}: {count} dated folders")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -95,17 +96,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         if not args.quiet:
             for item in plan.items:
-                print(f"  [plan] {'dir' if item.kind == 'dir' else 'txt'}  {item.path}")
+                print(f"  [plan] {_kind_word(item.kind)}  {item.path}")
         _print_year_summaries(plan)
-        print(f"Dry run: {plan.item_count} items planned under {root} - nothing written.")
+        print(f"Dry run: {len(plan.items)} items planned under {root} - nothing written.")
         return 0
 
-    result = apply_plan(plan, quiet=args.quiet)
-    if args.quiet:
-        _print_year_summaries(plan)
+    result = apply_plan(plan)
+    if not args.quiet:
+        for item in result.created:
+            print(f"  {_kind_word(item.kind)}   {item.path}")
+        for item in result.skipped:
+            print(f"  skip  {item.path} (already exists)")
+    _print_year_summaries(plan)
+    dirs = sum(1 for item in result.created if item.kind == DIR)
+    files = len(result.created) - dirs
     print(
-        f"Done: created {result.created_dirs} dirs and {result.created_files} txt files, "
-        f"skipped {result.skipped_files} existing txt files, under {root}."
+        f"Done: created {dirs} dirs and {files} txt files, "
+        f"skipped {len(result.skipped)} existing txt files, under {root}."
     )
     return 0
 

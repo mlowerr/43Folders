@@ -52,8 +52,8 @@ def test_quiet_prints_one_summary_line_per_year(tmp_path, capsys):
     rc = cli.main(["--root", str(tmp_path), "--start", "2026-12-01", "--years", "2", "--quiet"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "2026:" in out
-    assert "2027:" in out
+    assert "2026: 33 dated folders" in out  # 1 year + 1 month + 31 days
+    assert "2027: 378 dated folders" in out
     assert "[plan]" not in out
     assert "Done:" in out
 

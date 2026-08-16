@@ -42,16 +42,12 @@ def test_validate_parent_name_allows_safe_names(good):
     names.validate_parent_name(good)
 
 
-def test_labels_and_dirs_zero_padded():
+def test_folder_names_zero_padded():
     assert names.year_dir(2027) == "2027"
     assert names.month_dir(1) == "01"
     assert names.month_dir(12) == "12"
     assert names.day_dir(1) == "01"
     assert names.day_dir(31) == "31"
-    assert names.year_label(2027) == "2027"
-    assert names.month_label(2027, 1) == "2027-01"
-    assert names.day_label(2027, 1, 1) == "2027-01-01"
-    assert names.day_label(2027, 12, 31) == "2027-12-31"
 
 
 def test_archive_name_sorts_first():

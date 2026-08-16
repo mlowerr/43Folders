@@ -1,4 +1,4 @@
-"""Validating and formatting folder and file names."""
+"""Validating and formatting folder names."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def validate_parent_name(name: str) -> None:
 
 
 def year_dir(year: int) -> str:
-    """Folder name for a year, e.g. ``2027``."""
+    """Folder name (and label) for a year, e.g. ``2027``."""
     return f"{year:04d}"
 
 
@@ -52,18 +52,3 @@ def month_dir(month: int) -> str:
 def day_dir(day: int) -> str:
     """Folder name for a day, e.g. ``01``."""
     return f"{day:02d}"
-
-
-def year_label(year: int) -> str:
-    """Text file label for a year, e.g. ``2027``."""
-    return year_dir(year)
-
-
-def month_label(year: int, month: int) -> str:
-    """Text file label for a month, e.g. ``2027-01``."""
-    return f"{year_dir(year)}-{month_dir(month)}"
-
-
-def day_label(year: int, month: int, day: int) -> str:
-    """Text file label for a day, e.g. ``2027-01-01``."""
-    return f"{year_dir(year)}-{month_dir(month)}-{day_dir(day)}"
