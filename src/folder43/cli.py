@@ -8,7 +8,15 @@ import sys
 from pathlib import Path
 
 from . import __version__, names
-from .generator import DIR, MAX_YEARS, BuildPlan, apply_plan, build_plan, year_totals
+from .generator import (
+    DIR,
+    MAX_YEARS,
+    BuildPlan,
+    UnsafePathError,
+    apply_plan,
+    build_plan,
+    year_totals,
+)
 
 
 def _parse_date(value: str) -> dt.date:
@@ -124,7 +132,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Dry run: {len(plan.items)} items planned under {display_root} - nothing written.")
         return 0
 
-    result = apply_plan(plan)
+    try:
+        result = apply_plan(plan)
+    except UnsafePathError as exc:
+        print(f"Error: {exc.reason}: {_display_path(exc.path)}", file=sys.stderr)
+        return 1
     if not args.quiet:
         for item in result.created:
             print(f"  {_kind_word(item.kind)}   {_display_path(item.path)}")

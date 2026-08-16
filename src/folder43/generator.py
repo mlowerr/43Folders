@@ -49,6 +49,15 @@ class ApplyResult:
     skipped: list[PlanItem] = field(default_factory=list)
 
 
+class UnsafePathError(FileExistsError):
+    """A planned path is a redirecting or otherwise incompatible filesystem object."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(reason)
+        self.path = path
+        self.reason = reason
+
+
 def _add_level(plan: BuildPlan, year: int, path: Path, label: str) -> None:
     plan.items.append(PlanItem(path, DIR, year=year))
     plan.items.append(PlanItem(path / names.ARCHIVE_NAME, DIR, year=year))
@@ -130,8 +139,8 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
             except FileExistsError:
                 path_stat = item.path.lstat()
                 if _is_redirecting_path(path_stat):
-                    raise FileExistsError(
-                        f"refusing to use redirecting path as directory: {item.path}"
+                    raise UnsafePathError(
+                        item.path, "refusing to use redirecting path as directory"
                     )
                 if stat.S_ISDIR(path_stat.st_mode):
                     continue
@@ -146,6 +155,6 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
                 if not _is_redirecting_path(path_stat) and stat.S_ISREG(path_stat.st_mode):
                     result.skipped.append(item)
                     continue
-                raise FileExistsError(f"label path is not a regular file: {item.path}")
+                raise UnsafePathError(item.path, "label path is not a regular file")
             result.created.append(item)
     return result
