@@ -46,7 +46,7 @@ CLI output is ASCII-only. Invalid arguments exit with code 2; success is 0.
 | --- | --- | --- |
 | `--name NAME` | `43Folders` | Parent folder name |
 | `--start YYYY-MM-DD` | Jan 1 of current year | First date to create (all past days of that year included) |
-| `--years N` | `1` | Number of years; a partial start year counts as one |
+| `--years N` | `1` | Number of years (1-100); a partial start year counts as one |
 | `--root DIR` | current directory | Where the parent folder is created |
 | `--dry-run` | off | Print the plan; touch nothing |
 | `--quiet` | off | One summary line per year (`2026: 378 dated folders`) instead of per-item lines |
@@ -60,12 +60,15 @@ year counts as a full year:
 - `43folders` -> current year, Jan 1 through Dec 31 (past dates included).
 - `43folders --start 2026-09-01 --years 2` -> 2026-09-01 through 2027-12-31.
 - Leap years are handled (Feb 29 in 2028, not 2027).
+- Ranges may contain at most 100 years and may not extend beyond year 9999.
 
 ## Safety guarantees
 
 - **Never deletes or overwrites anything** — `00-Archive` folders and label
   text files may hold user content. Re-runs are idempotent: existing dirs are
   reused, existing txt files are skipped untouched.
+- Planned directory symlinks and non-regular label paths are rejected rather
+  than followed. The parent directory supplied via `--root` must be trusted.
 - So it is always safe to re-run the generator over an existing tree to repair
   missing folders.
 
@@ -73,8 +76,9 @@ year counts as a full year:
 
 `--name` must not contain `<>:"/\|?*`, control characters, leading/trailing
 whitespace, trailing dots; must not be `.`/`..` or a Windows device name
-(CON/PRN/AUX/NUL/COM1-9/LPT1-9). Generated names (`00-Archive`, `YYYY`,
-`YYYY-MM`, `YYYY-MM-DD`) are always valid on every OS.
+(CON/PRN/AUX/NUL/CONIN$/CONOUT$/COM1-9/LPT1-9, including superscript-digit
+variants). Names are limited to 255 characters. Generated names
+(`00-Archive`, `YYYY`, `YYYY-MM`, `YYYY-MM-DD`) are always valid on every OS.
 
 ## Recipes
 

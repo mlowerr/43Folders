@@ -69,6 +69,7 @@ def test_default_name_is_valid():
         ["--start", "nope"],
         ["--years", "0"],
         ["--years", "x"],
+        ["--years", "101"],
         ["--name", "a/b"],
         ["--name", "CON"],
         ["--name", "note."],
@@ -87,3 +88,22 @@ def test_version_flag(tmp_path, capsys):
         cli.main(["--version"])
     assert exc.value.code == 0
     assert "43folders" in capsys.readouterr().out
+
+
+def test_range_past_year_9999_is_cli_error(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--root", str(tmp_path), "--start", "9999-12-31", "--years", "2"])
+    assert exc.value.code == 2
+
+
+def test_paths_are_safely_escaped_in_output(tmp_path, capsys):
+    unsafe_root = tmp_path / "line\nbreak-☃"
+    rc = cli.main(
+        ["--root", str(unsafe_root), "--start", "2026-12-31", "--dry-run", "--quiet"]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "line\\x0abreak-\\u2603" in output
+    assert "line\nbreak" not in output
+    assert output.isascii()

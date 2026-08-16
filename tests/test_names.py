@@ -22,11 +22,16 @@ from folder43 import names
         "com1",
         "LPT9",
         "aux.txt",
+        "CONIN$",
+        "conout$.txt",
+        "COM¹",
+        "lpt².log",
         "dot.",
         "dots..",
         " lead",
         "trail ",
         "ctl\x00char",
+        "x" * 256,
     ],
 )
 def test_validate_parent_name_rejects_unsafe_names(bad):

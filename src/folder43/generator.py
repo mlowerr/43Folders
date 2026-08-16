@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import stat
 from dataclasses import dataclass, field
 from itertools import groupby
 from pathlib import Path
@@ -12,6 +13,7 @@ from . import names
 
 DIR = "dir"
 TXT = "txt"
+MAX_YEARS = 100
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,10 @@ def build_plan(root: Path, start: dt.date, years: int) -> BuildPlan:
     """
     if years < 1:
         raise ValueError("years must be at least 1")
+    if years > MAX_YEARS:
+        raise ValueError(f"years must be at most {MAX_YEARS}")
+    if years > dt.date.max.year - start.year + 1:
+        raise ValueError(f"date range must not extend beyond year {dt.date.max.year}")
 
     plan = BuildPlan(root=root)
     plan.items.append(PlanItem(root, DIR))
@@ -110,13 +116,25 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
     result = ApplyResult()
     for item in plan.items:
         if item.kind == DIR:
-            if item.path.is_dir():
-                continue
-            item.path.mkdir(parents=True)
+            try:
+                item.path.mkdir(parents=True)
+            except FileExistsError:
+                mode = item.path.lstat().st_mode
+                if stat.S_ISLNK(mode):
+                    raise FileExistsError(f"refusing to use symlink as directory: {item.path}")
+                if stat.S_ISDIR(mode):
+                    continue
+                raise
             result.created.append(item)
-        elif item.path.exists():
-            result.skipped.append(item)
         else:
-            item.path.write_text(f"{item.label}\n", encoding="utf-8", newline="\n")
+            try:
+                with item.path.open("x", encoding="utf-8", newline="\n") as label_file:
+                    label_file.write(f"{item.label}\n")
+            except FileExistsError:
+                mode = item.path.lstat().st_mode
+                if stat.S_ISREG(mode):
+                    result.skipped.append(item)
+                    continue
+                raise FileExistsError(f"label path is not a regular file: {item.path}")
             result.created.append(item)
     return result
