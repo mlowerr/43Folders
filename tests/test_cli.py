@@ -1,4 +1,5 @@
 import datetime as dt
+import sys
 
 import pytest
 
@@ -96,6 +97,30 @@ def test_range_past_year_9999_is_cli_error(tmp_path):
     assert exc.value.code == 2
 
 
+def test_years_above_max_rejected_by_cli(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--root", str(tmp_path), "--start", "2026-01-01", "--years", "101"])
+    assert exc.value.code == 2
+
+
+def test_display_path_supplementary_plane(tmp_path, capsys):
+    root = tmp_path / "emoji-\U0001f600"
+    rc = cli.main(["--root", str(root), "--start", "2026-12-31", "--dry-run", "--quiet"])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "\\U0001f600" in output
+    assert output.isascii()
+
+
+def test_today_leap_year(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_today", lambda: dt.date(2024, 2, 29))
+    rc = cli.main(["--root", str(tmp_path), "--quiet"])
+    assert rc == 0
+    root = tmp_path / "43Folders"
+    assert (root / "2024/02/29/2024-02-29.txt").exists()
+    assert not (root / "2025").exists()
+
+
 def test_paths_are_safely_escaped_in_output(tmp_path, capsys):
     unsafe_root = tmp_path / "line\nbreak-☃"
     rc = cli.main(
@@ -109,6 +134,10 @@ def test_paths_are_safely_escaped_in_output(tmp_path, capsys):
     assert output.isascii()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows cannot create directories with control characters in names",
+)
 @pytest.mark.parametrize("collision", ["redirecting directory", "label directory"])
 def test_filesystem_errors_safely_escape_paths(tmp_path, capsys, collision):
     unsafe_parent = tmp_path / "line\nbreak-☃"

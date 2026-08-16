@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from . import __version__, names
@@ -12,6 +13,7 @@ from .generator import (
     DIR,
     MAX_YEARS,
     BuildPlan,
+    PlanItem,
     UnsafePathError,
     apply_plan,
     build_plan,
@@ -33,6 +35,8 @@ def _positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError(f"invalid integer {value!r}")
     if count < 1:
         raise argparse.ArgumentTypeError("value must be at least 1")
+    if count > MAX_YEARS:
+        raise argparse.ArgumentTypeError(f"value must be at most {MAX_YEARS}")
     return count
 
 
@@ -63,6 +67,19 @@ def _display_path(path: Path) -> str:
 def _print_year_summaries(plan: BuildPlan) -> None:
     for year, count in year_totals(plan):
         print(f"  {year}: {count} dated folders")
+
+
+def _print_item_lines(
+    items: list[PlanItem],
+    *,
+    prefix: str = "",
+    suffix: str = "",
+    word_fn: Callable[[PlanItem], str] | None = None,
+) -> None:
+    """Print one line per item with optional prefix and suffix."""
+    for item in items:
+        word = word_fn(item) if word_fn else _kind_word(item.kind)
+        print(f"  {prefix}{word}  {_display_path(item.path)}{suffix}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,8 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         if not args.quiet:
-            for item in plan.items:
-                print(f"  [plan] {_kind_word(item.kind)}  {_display_path(item.path)}")
+            _print_item_lines(plan.items, prefix="[plan] ")
         _print_year_summaries(plan)
         print(f"Dry run: {len(plan.items)} items planned under {display_root} - nothing written.")
         return 0
@@ -138,10 +154,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc.reason}: {_display_path(exc.path)}", file=sys.stderr)
         return 1
     if not args.quiet:
-        for item in result.created:
-            print(f"  {_kind_word(item.kind)}   {_display_path(item.path)}")
-        for item in result.skipped:
-            print(f"  skip  {_display_path(item.path)} (already exists)")
+        _print_item_lines(result.created)
+        _print_item_lines(
+            result.skipped,
+            word_fn=lambda item: "skip",
+            suffix=" (already exists)",
+        )
     _print_year_summaries(plan)
     dirs = sum(1 for item in result.created if item.kind == DIR)
     files = len(result.created) - dirs

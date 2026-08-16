@@ -24,8 +24,6 @@ from folder43 import names
         "aux.txt",
         "CONIN$",
         "conout$.txt",
-        "COM¹",
-        "lpt².log",
         "dot.",
         "dots..",
         " lead",

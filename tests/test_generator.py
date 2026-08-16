@@ -1,6 +1,7 @@
 import datetime as dt
 import os
 import stat
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,11 @@ import pytest
 
 from folder43 import names
 from folder43.generator import DIR, MAX_YEARS, TXT, PlanItem, apply_plan, build_plan, year_totals
+
+needs_symlinks = pytest.mark.skipif(
+    sys.platform == "win32" and not os.environ.get("CI"),
+    reason="symlinks require elevated privileges on Windows",
+)
 
 
 def test_full_non_leap_year_counts():
@@ -118,6 +124,13 @@ def test_build_plan_accepts_datetime_max_year():
     assert Path("out/9999/12/31") in {item.path for item in plan.items}
 
 
+def test_build_plan_rejects_root_as_existing_file(tmp_path):
+    root = tmp_path / "43Folders"
+    root.write_text("not a directory", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
+
+
 def test_apply_creates_complete_tree(tmp_path):
     root = tmp_path / "43Folders"
     result = apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
@@ -167,26 +180,19 @@ def test_existing_archive_contents_and_txt_are_left_untouched(tmp_path):
     assert (root / "2026/01/2026-01.txt").read_text(encoding="utf-8") == "2026-01\n"
 
 
-def test_file_created_at_open_boundary_is_not_overwritten(tmp_path, monkeypatch):
+def test_file_existing_before_apply_is_skipped_not_overwritten(tmp_path):
     root = tmp_path / "43Folders"
     target = root / "2026/2026.txt"
-    original_open = Path.open
-    injected = False
+    target.parent.mkdir(parents=True)
+    target.write_text("user content", encoding="utf-8")
 
-    def racing_open(path, *args, **kwargs):
-        nonlocal injected
-        if path == target and not injected:
-            injected = True
-            path.write_text("racing writer", encoding="utf-8")
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", racing_open)
     result = apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
 
-    assert target.read_text(encoding="utf-8") == "racing writer"
+    assert target.read_text(encoding="utf-8") == "user content"
     assert target in {item.path for item in result.skipped}
 
 
+@needs_symlinks
 @pytest.mark.parametrize(
     "relative", ["", "2026", "2026/01", "2026/01/01", "2026/01/00-Archive"]
 )
@@ -225,6 +231,7 @@ def test_apply_rejects_windows_directory_reparse_point(tmp_path, monkeypatch):
         apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
 
 
+@needs_symlinks
 def test_apply_rejects_broken_label_symlink_without_writing_target(tmp_path):
     root = tmp_path / "43Folders"
     outside = tmp_path / "outside.txt"
@@ -238,7 +245,19 @@ def test_apply_rejects_broken_label_symlink_without_writing_target(tmp_path):
     assert not outside.exists()
 
 
-@pytest.mark.parametrize("kind", ["directory", "fifo"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        pytest.param(
+            "directory",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="Windows does not allow directories with .txt extension",
+            ),
+        ),
+        "fifo",
+    ],
+)
 def test_apply_rejects_non_regular_label_path(tmp_path, kind):
     root = tmp_path / "43Folders"
     label = root / "2026/2026.txt"

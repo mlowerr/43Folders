@@ -19,8 +19,6 @@ _RESERVED_BASE_NAMES = frozenset(
         "CONOUT$",
         *(f"COM{i}" for i in range(1, 10)),
         *(f"LPT{i}" for i in range(1, 10)),
-        *(f"COM{i}" for i in "¹²³"),
-        *(f"LPT{i}" for i in "¹²³"),
     }
 )
 

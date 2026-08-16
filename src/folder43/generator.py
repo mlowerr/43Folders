@@ -7,7 +7,6 @@ import datetime as dt
 import os
 import stat
 from dataclasses import dataclass, field
-from itertools import groupby
 from pathlib import Path
 
 from . import names
@@ -76,15 +75,14 @@ def year_totals(plan: BuildPlan) -> list[tuple[int, int]]:
     """Ordered ``(year, dated_folder_count)`` pairs for *plan*.
 
     Every dated folder carries exactly one label file, so counting labels per
-    year yields the number of dated folders. Items are appended year by year,
-    which makes a ``groupby`` over ``item.year`` safe.
+    year yields the number of dated folders. Uses a dict so results are
+    independent of item ordering.
     """
-    totals = []
-    for year, items in groupby(plan.items, key=lambda item: item.year):
-        if year is None:
-            continue
-        totals.append((year, sum(1 for item in items if item.kind == TXT)))
-    return totals
+    counts: dict[int, int] = {}
+    for item in plan.items:
+        if item.year is not None and item.kind == TXT:
+            counts[item.year] = counts.get(item.year, 0) + 1
+    return sorted(counts.items())
 
 
 def build_plan(root: Path, start: dt.date, years: int) -> BuildPlan:
@@ -124,6 +122,11 @@ def build_plan(root: Path, start: dt.date, years: int) -> BuildPlan:
     return plan
 
 
+def _is_path_safe(path: Path) -> bool:
+    """Return True if *path* exists and is neither a symlink nor a reparse point."""
+    return not _is_redirecting_path(path.lstat())
+
+
 def apply_plan(plan: BuildPlan) -> ApplyResult:
     """Create every item in *plan*. Never deletes or overwrites anything.
 
@@ -133,28 +136,23 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
     """
     result = ApplyResult()
     for item in plan.items:
-        if item.kind == DIR:
-            try:
-                item.path.mkdir(parents=True)
-            except FileExistsError:
-                path_stat = item.path.lstat()
-                if _is_redirecting_path(path_stat):
+        if item.path.exists():
+            if not _is_path_safe(item.path):
+                if item.kind == DIR:
                     raise UnsafePathError(
                         item.path, "refusing to use redirecting path as directory"
                     )
-                if stat.S_ISDIR(path_stat.st_mode):
-                    continue
-                raise
-            result.created.append(item)
-        else:
-            try:
-                with item.path.open("x", encoding="utf-8", newline="\n") as label_file:
-                    label_file.write(f"{item.label}\n")
-            except FileExistsError:
-                path_stat = item.path.lstat()
-                if not _is_redirecting_path(path_stat) and stat.S_ISREG(path_stat.st_mode):
-                    result.skipped.append(item)
-                    continue
                 raise UnsafePathError(item.path, "label path is not a regular file")
-            result.created.append(item)
+            if item.kind == DIR:
+                continue
+            if item.path.is_file():
+                result.skipped.append(item)
+                continue
+            raise UnsafePathError(item.path, "label path is not a regular file")
+        if item.kind == DIR:
+            item.path.mkdir(parents=True)
+        else:
+            with item.path.open("x", encoding="utf-8", newline="\n") as label_file:
+                label_file.write(f"{item.label}\n")
+        result.created.append(item)
     return result
