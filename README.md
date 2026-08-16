@@ -60,7 +60,7 @@ python -m pip install -e ".[dev]"   # with pytest + ruff for development
 | --- | --- | --- |
 | `--name NAME` | `43Folders` | Parent folder name |
 | `--start YYYY-MM-DD` | Jan 1 of current year | First date to create |
-| `--years N` | `1` | Number of years; a partial start year counts as one |
+| `--years N` | `1` | Number of years (1-100); a partial start year counts as one |
 | `--root DIR` | current directory | Where the parent folder is created |
 | `--dry-run` | off | Print the plan without touching the filesystem |
 | `--quiet` | off | Print one summary line per year instead of every item |
@@ -72,15 +72,27 @@ A start date other than January 1 creates the rest of that year and counts it
 as a complete year. Example: `--start 2026-09-01 --years 2` creates
 `2026-09-01` through `2027-12-31`.
 
+Ranges may contain at most 100 years and may not extend beyond year 9999.
+Use `--quiet` for multi-year runs to avoid printing every planned item.
+
 ## Behavior guarantees
 
 - **Never deletes anything.** Archive folders can hold your files; existing
   content is never touched.
 - **Idempotent.** Re-running is safe: existing directories are reused and
-  existing text files are skipped without modification.
+  existing regular text files are skipped without modification. Label files
+  are created atomically so a concurrent writer cannot be overwritten.
+- **Does not follow redirecting objects.** A symlink, Windows reparse point
+  (including a junction), or other unexpected object at a planned directory or
+  label path stops the run instead of redirecting writes.
 - **Cross-platform names.** The parent name is validated against characters
   and reserved names that are unsafe on Windows, so a tree created anywhere
-  can be copied anywhere.
+  can be copied anywhere. Its UTF-8 byte length and UTF-16 code-unit length
+  must both fit the portable 255-unit component limit.
+
+The directory containing the generated parent folder should itself be trusted;
+do not run against a parent directory that an untrusted process can replace
+while generation is in progress.
 
 Note: bare invocation from this repository's root would create
 `C:\git\43Folders\43Folders`. Run from another directory, or pass

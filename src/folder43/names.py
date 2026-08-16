@@ -15,8 +15,12 @@ _RESERVED_BASE_NAMES = frozenset(
         "PRN",
         "AUX",
         "NUL",
+        "CONIN$",
+        "CONOUT$",
         *(f"COM{i}" for i in range(1, 10)),
         *(f"LPT{i}" for i in range(1, 10)),
+        *(f"COM{i}" for i in "¹²³"),
+        *(f"LPT{i}" for i in "¹²³"),
     }
 )
 
@@ -37,6 +41,10 @@ def validate_parent_name(name: str) -> None:
         raise ValueError(f"parent folder name {name!r} must not end with a dot")
     if name.split(".")[0].upper() in _RESERVED_BASE_NAMES:
         raise ValueError(f"parent folder name {name!r} is reserved on Windows")
+    utf8_bytes = len(name.encode("utf-8"))
+    utf16_units = len(name.encode("utf-16-le")) // 2
+    if utf8_bytes > 255 or utf16_units > 255:
+        raise ValueError("parent folder name exceeds the portable 255-unit component limit")
 
 
 def year_dir(year: int) -> str:

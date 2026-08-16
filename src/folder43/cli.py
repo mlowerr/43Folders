@@ -8,7 +8,15 @@ import sys
 from pathlib import Path
 
 from . import __version__, names
-from .generator import DIR, BuildPlan, apply_plan, build_plan, year_totals
+from .generator import (
+    DIR,
+    MAX_YEARS,
+    BuildPlan,
+    UnsafePathError,
+    apply_plan,
+    build_plan,
+    year_totals,
+)
 
 
 def _parse_date(value: str) -> dt.date:
@@ -34,6 +42,22 @@ def _today() -> dt.date:
 
 def _kind_word(kind: str) -> str:
     return "dir" if kind == DIR else "txt"
+
+
+def _display_path(path: Path) -> str:
+    """Render a path without allowing control characters to alter terminal output."""
+    rendered = []
+    for char in str(path):
+        codepoint = ord(char)
+        if 0x20 <= codepoint <= 0x7E:
+            rendered.append(char)
+        elif codepoint <= 0xFF:
+            rendered.append(f"\\x{codepoint:02x}")
+        elif codepoint <= 0xFFFF:
+            rendered.append(f"\\u{codepoint:04x}")
+        else:
+            rendered.append(f"\\U{codepoint:08x}")
+    return "".join(rendered)
 
 
 def _print_year_summaries(plan: BuildPlan) -> None:
@@ -66,7 +90,10 @@ def main(argv: list[str] | None = None) -> int:
         type=_positive_int,
         default=1,
         metavar="N",
-        help="number of years to create (default: 1); a partial start year counts as one",
+        help=(
+            f"number of years to create, 1-{MAX_YEARS} (default: 1); "
+            "a partial start year counts as one"
+        ),
     )
     parser.add_argument(
         "--root",
@@ -91,28 +118,36 @@ def main(argv: list[str] | None = None) -> int:
 
     root = args.root / args.name
     start = args.start if args.start is not None else _today().replace(month=1, day=1)
-    plan = build_plan(root, start, args.years)
+    try:
+        plan = build_plan(root, start, args.years)
+    except ValueError as exc:
+        parser.error(str(exc))
+    display_root = _display_path(root)
 
     if args.dry_run:
         if not args.quiet:
             for item in plan.items:
-                print(f"  [plan] {_kind_word(item.kind)}  {item.path}")
+                print(f"  [plan] {_kind_word(item.kind)}  {_display_path(item.path)}")
         _print_year_summaries(plan)
-        print(f"Dry run: {len(plan.items)} items planned under {root} - nothing written.")
+        print(f"Dry run: {len(plan.items)} items planned under {display_root} - nothing written.")
         return 0
 
-    result = apply_plan(plan)
+    try:
+        result = apply_plan(plan)
+    except UnsafePathError as exc:
+        print(f"Error: {exc.reason}: {_display_path(exc.path)}", file=sys.stderr)
+        return 1
     if not args.quiet:
         for item in result.created:
-            print(f"  {_kind_word(item.kind)}   {item.path}")
+            print(f"  {_kind_word(item.kind)}   {_display_path(item.path)}")
         for item in result.skipped:
-            print(f"  skip  {item.path} (already exists)")
+            print(f"  skip  {_display_path(item.path)} (already exists)")
     _print_year_summaries(plan)
     dirs = sum(1 for item in result.created if item.kind == DIR)
     files = len(result.created) - dirs
     print(
         f"Done: created {dirs} dirs and {files} txt files, "
-        f"skipped {len(result.skipped)} existing txt files, under {root}."
+        f"skipped {len(result.skipped)} existing txt files, under {display_root}."
     )
     return 0
 

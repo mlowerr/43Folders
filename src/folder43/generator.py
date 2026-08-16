@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import os
+import stat
 from dataclasses import dataclass, field
 from itertools import groupby
 from pathlib import Path
@@ -12,6 +14,7 @@ from . import names
 
 DIR = "dir"
 TXT = "txt"
+MAX_YEARS = 100
 
 
 @dataclass(frozen=True)
@@ -46,10 +49,27 @@ class ApplyResult:
     skipped: list[PlanItem] = field(default_factory=list)
 
 
+class UnsafePathError(FileExistsError):
+    """A planned path is a redirecting or otherwise incompatible filesystem object."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(reason)
+        self.path = path
+        self.reason = reason
+
+
 def _add_level(plan: BuildPlan, year: int, path: Path, label: str) -> None:
     plan.items.append(PlanItem(path, DIR, year=year))
     plan.items.append(PlanItem(path / names.ARCHIVE_NAME, DIR, year=year))
     plan.items.append(PlanItem(path / f"{label}.txt", TXT, label, year))
+
+
+def _is_redirecting_path(path_stat: os.stat_result) -> bool:
+    """Return whether an lstat result identifies a symlink or Windows reparse point."""
+    file_attributes = getattr(path_stat, "st_file_attributes", 0)
+    return stat.S_ISLNK(path_stat.st_mode) or bool(
+        file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
 
 
 def year_totals(plan: BuildPlan) -> list[tuple[int, int]]:
@@ -76,6 +96,10 @@ def build_plan(root: Path, start: dt.date, years: int) -> BuildPlan:
     """
     if years < 1:
         raise ValueError("years must be at least 1")
+    if years > MAX_YEARS:
+        raise ValueError(f"years must be at most {MAX_YEARS}")
+    if years > dt.date.max.year - start.year + 1:
+        raise ValueError(f"date range must not extend beyond year {dt.date.max.year}")
 
     plan = BuildPlan(root=root)
     plan.items.append(PlanItem(root, DIR))
@@ -110,13 +134,27 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
     result = ApplyResult()
     for item in plan.items:
         if item.kind == DIR:
-            if item.path.is_dir():
-                continue
-            item.path.mkdir(parents=True)
+            try:
+                item.path.mkdir(parents=True)
+            except FileExistsError:
+                path_stat = item.path.lstat()
+                if _is_redirecting_path(path_stat):
+                    raise UnsafePathError(
+                        item.path, "refusing to use redirecting path as directory"
+                    )
+                if stat.S_ISDIR(path_stat.st_mode):
+                    continue
+                raise
             result.created.append(item)
-        elif item.path.exists():
-            result.skipped.append(item)
         else:
-            item.path.write_text(f"{item.label}\n", encoding="utf-8", newline="\n")
+            try:
+                with item.path.open("x", encoding="utf-8", newline="\n") as label_file:
+                    label_file.write(f"{item.label}\n")
+            except FileExistsError:
+                path_stat = item.path.lstat()
+                if not _is_redirecting_path(path_stat) and stat.S_ISREG(path_stat.st_mode):
+                    result.skipped.append(item)
+                    continue
+                raise UnsafePathError(item.path, "label path is not a regular file")
             result.created.append(item)
     return result

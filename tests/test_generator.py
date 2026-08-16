@@ -1,10 +1,13 @@
 import datetime as dt
+import os
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from folder43 import names
-from folder43.generator import DIR, TXT, PlanItem, apply_plan, build_plan, year_totals
+from folder43.generator import DIR, MAX_YEARS, TXT, PlanItem, apply_plan, build_plan, year_totals
 
 
 def test_full_non_leap_year_counts():
@@ -100,6 +103,21 @@ def test_build_plan_rejects_zero_years():
         build_plan(Path("out"), dt.date(2026, 1, 1), 0)
 
 
+def test_build_plan_rejects_more_than_maximum_years():
+    with pytest.raises(ValueError, match=f"at most {MAX_YEARS}"):
+        build_plan(Path("out"), dt.date(2026, 1, 1), MAX_YEARS + 1)
+
+
+def test_build_plan_rejects_range_after_datetime_max_year():
+    with pytest.raises(ValueError, match="must not extend beyond year 9999"):
+        build_plan(Path("out"), dt.date(9999, 12, 31), 2)
+
+
+def test_build_plan_accepts_datetime_max_year():
+    plan = build_plan(Path("out"), dt.date(9999, 12, 31), 1)
+    assert Path("out/9999/12/31") in {item.path for item in plan.items}
+
+
 def test_apply_creates_complete_tree(tmp_path):
     root = tmp_path / "43Folders"
     result = apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
@@ -147,3 +165,90 @@ def test_existing_archive_contents_and_txt_are_left_untouched(tmp_path):
     assert (archive / "keep.txt").read_text(encoding="utf-8") == "precious"
     assert custom.read_text(encoding="utf-8") == "user notes"
     assert (root / "2026/01/2026-01.txt").read_text(encoding="utf-8") == "2026-01\n"
+
+
+def test_file_created_at_open_boundary_is_not_overwritten(tmp_path, monkeypatch):
+    root = tmp_path / "43Folders"
+    target = root / "2026/2026.txt"
+    original_open = Path.open
+    injected = False
+
+    def racing_open(path, *args, **kwargs):
+        nonlocal injected
+        if path == target and not injected:
+            injected = True
+            path.write_text("racing writer", encoding="utf-8")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", racing_open)
+    result = apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
+
+    assert target.read_text(encoding="utf-8") == "racing writer"
+    assert target in {item.path for item in result.skipped}
+
+
+@pytest.mark.parametrize(
+    "relative", ["", "2026", "2026/01", "2026/01/01", "2026/01/00-Archive"]
+)
+def test_apply_rejects_symlinked_planned_directory(tmp_path, relative):
+    root = tmp_path / "43Folders"
+    target = tmp_path / "outside"
+    target.mkdir()
+    link = root / relative
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(FileExistsError, match="refusing to use redirecting path"):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
+
+    assert list(target.iterdir()) == []
+
+
+def test_apply_rejects_windows_directory_reparse_point(tmp_path, monkeypatch):
+    root = tmp_path / "43Folders"
+    junction = root / "2026"
+    junction.mkdir(parents=True)
+    original_lstat = Path.lstat
+    junction_stat = original_lstat(junction)
+
+    def lstat_with_reparse_attribute(path):
+        if path == junction:
+            return SimpleNamespace(
+                st_mode=junction_stat.st_mode,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", lstat_with_reparse_attribute)
+
+    with pytest.raises(FileExistsError, match="refusing to use redirecting path"):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
+
+
+def test_apply_rejects_broken_label_symlink_without_writing_target(tmp_path):
+    root = tmp_path / "43Folders"
+    outside = tmp_path / "outside.txt"
+    label = root / "2026/2026.txt"
+    label.parent.mkdir(parents=True)
+    label.symlink_to(outside)
+
+    with pytest.raises(FileExistsError, match="not a regular file"):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
+
+    assert not outside.exists()
+
+
+@pytest.mark.parametrize("kind", ["directory", "fifo"])
+def test_apply_rejects_non_regular_label_path(tmp_path, kind):
+    root = tmp_path / "43Folders"
+    label = root / "2026/2026.txt"
+    label.parent.mkdir(parents=True)
+    if kind == "directory":
+        label.mkdir()
+    else:
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFOs are not supported on this platform")
+        os.mkfifo(label)
+
+    with pytest.raises(FileExistsError, match="not a regular file"):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))

@@ -69,6 +69,7 @@ def test_default_name_is_valid():
         ["--start", "nope"],
         ["--years", "0"],
         ["--years", "x"],
+        ["--years", "101"],
         ["--name", "a/b"],
         ["--name", "CON"],
         ["--name", "note."],
@@ -87,3 +88,58 @@ def test_version_flag(tmp_path, capsys):
         cli.main(["--version"])
     assert exc.value.code == 0
     assert "43folders" in capsys.readouterr().out
+
+
+def test_range_past_year_9999_is_cli_error(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--root", str(tmp_path), "--start", "9999-12-31", "--years", "2"])
+    assert exc.value.code == 2
+
+
+def test_paths_are_safely_escaped_in_output(tmp_path, capsys):
+    unsafe_root = tmp_path / "line\nbreak-☃"
+    rc = cli.main(
+        ["--root", str(unsafe_root), "--start", "2026-12-31", "--dry-run", "--quiet"]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "line\\x0abreak-\\u2603" in output
+    assert "line\nbreak" not in output
+    assert output.isascii()
+
+
+@pytest.mark.parametrize("collision", ["redirecting directory", "label directory"])
+def test_filesystem_errors_safely_escape_paths(tmp_path, capsys, collision):
+    unsafe_parent = tmp_path / "line\nbreak-☃"
+    root = unsafe_parent / "Notes"
+    if collision == "redirecting directory":
+        unsafe_parent.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        root.symlink_to(outside, target_is_directory=True)
+        expected_reason = "refusing to use redirecting path as directory"
+    else:
+        label = root / "2026/2026.txt"
+        label.mkdir(parents=True)
+        expected_reason = "label path is not a regular file"
+
+    rc = cli.main(
+        [
+            "--root",
+            str(unsafe_parent),
+            "--name",
+            "Notes",
+            "--start",
+            "2026-12-31",
+            "--quiet",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.out == ""
+    assert expected_reason in captured.err
+    assert "line\\x0abreak-\\u2603" in captured.err
+    assert "line\nbreak" not in captured.err
+    assert captured.err.isascii()
