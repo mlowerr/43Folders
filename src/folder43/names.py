@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew E. Lowerr
+# SPDX-License-Identifier: MIT
 """Validating and formatting folder names."""
 
 from __future__ import annotations

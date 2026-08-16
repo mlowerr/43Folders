@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew E. Lowerr
+# SPDX-License-Identifier: MIT
 """Command-line interface for the 43folders generator."""
 
 from __future__ import annotations

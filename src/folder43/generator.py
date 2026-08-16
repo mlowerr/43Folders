@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew E. Lowerr
+# SPDX-License-Identifier: MIT
 """Core logic: planning and materializing the dated folder tree."""
 
 from __future__ import annotations

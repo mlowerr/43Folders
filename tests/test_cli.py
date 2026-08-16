@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew E. Lowerr
+# SPDX-License-Identifier: MIT
 import datetime as dt
 import sys
 
