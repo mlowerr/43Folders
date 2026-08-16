@@ -47,6 +47,16 @@ def test_validate_parent_name_allows_safe_names(good):
     names.validate_parent_name(good)
 
 
+def test_validate_parent_name_allows_255_ascii_bytes():
+    names.validate_parent_name("x" * 255)
+
+
+@pytest.mark.parametrize("bad", ["é" * 200, "📁" * 100])
+def test_validate_parent_name_rejects_names_over_portable_encoded_limit(bad):
+    with pytest.raises(ValueError, match="portable 255-unit component limit"):
+        names.validate_parent_name(bad)
+
+
 def test_folder_names_zero_padded():
     assert names.year_dir(2027) == "2027"
     assert names.month_dir(1) == "01"

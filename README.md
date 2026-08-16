@@ -82,11 +82,13 @@ Use `--quiet` for multi-year runs to avoid printing every planned item.
 - **Idempotent.** Re-running is safe: existing directories are reused and
   existing regular text files are skipped without modification. Label files
   are created atomically so a concurrent writer cannot be overwritten.
-- **Does not follow tree symlinks.** A symlink or other unexpected object at a
-  planned directory or label path stops the run instead of redirecting writes.
+- **Does not follow redirecting objects.** A symlink, Windows reparse point
+  (including a junction), or other unexpected object at a planned directory or
+  label path stops the run instead of redirecting writes.
 - **Cross-platform names.** The parent name is validated against characters
   and reserved names that are unsafe on Windows, so a tree created anywhere
-  can be copied anywhere.
+  can be copied anywhere. Its UTF-8 byte length and UTF-16 code-unit length
+  must both fit the portable 255-unit component limit.
 
 The directory containing the generated parent folder should itself be trusted;
 do not run against a parent directory that an untrusted process can replace

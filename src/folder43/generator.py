@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import os
 import stat
 from dataclasses import dataclass, field
 from itertools import groupby
@@ -52,6 +53,14 @@ def _add_level(plan: BuildPlan, year: int, path: Path, label: str) -> None:
     plan.items.append(PlanItem(path, DIR, year=year))
     plan.items.append(PlanItem(path / names.ARCHIVE_NAME, DIR, year=year))
     plan.items.append(PlanItem(path / f"{label}.txt", TXT, label, year))
+
+
+def _is_redirecting_path(path_stat: os.stat_result) -> bool:
+    """Return whether an lstat result identifies a symlink or Windows reparse point."""
+    file_attributes = getattr(path_stat, "st_file_attributes", 0)
+    return stat.S_ISLNK(path_stat.st_mode) or bool(
+        file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
 
 
 def year_totals(plan: BuildPlan) -> list[tuple[int, int]]:
@@ -119,10 +128,12 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
             try:
                 item.path.mkdir(parents=True)
             except FileExistsError:
-                mode = item.path.lstat().st_mode
-                if stat.S_ISLNK(mode):
-                    raise FileExistsError(f"refusing to use symlink as directory: {item.path}")
-                if stat.S_ISDIR(mode):
+                path_stat = item.path.lstat()
+                if _is_redirecting_path(path_stat):
+                    raise FileExistsError(
+                        f"refusing to use redirecting path as directory: {item.path}"
+                    )
+                if stat.S_ISDIR(path_stat.st_mode):
                     continue
                 raise
             result.created.append(item)
@@ -131,8 +142,8 @@ def apply_plan(plan: BuildPlan) -> ApplyResult:
                 with item.path.open("x", encoding="utf-8", newline="\n") as label_file:
                     label_file.write(f"{item.label}\n")
             except FileExistsError:
-                mode = item.path.lstat().st_mode
-                if stat.S_ISREG(mode):
+                path_stat = item.path.lstat()
+                if not _is_redirecting_path(path_stat) and stat.S_ISREG(path_stat.st_mode):
                     result.skipped.append(item)
                     continue
                 raise FileExistsError(f"label path is not a regular file: {item.path}")

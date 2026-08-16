@@ -1,6 +1,8 @@
 import datetime as dt
 import os
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -196,10 +198,31 @@ def test_apply_rejects_symlinked_planned_directory(tmp_path, relative):
     link.parent.mkdir(parents=True, exist_ok=True)
     link.symlink_to(target, target_is_directory=True)
 
-    with pytest.raises(FileExistsError, match="refusing to use symlink"):
+    with pytest.raises(FileExistsError, match="refusing to use redirecting path"):
         apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
 
     assert list(target.iterdir()) == []
+
+
+def test_apply_rejects_windows_directory_reparse_point(tmp_path, monkeypatch):
+    root = tmp_path / "43Folders"
+    junction = root / "2026"
+    junction.mkdir(parents=True)
+    original_lstat = Path.lstat
+    junction_stat = original_lstat(junction)
+
+    def lstat_with_reparse_attribute(path):
+        if path == junction:
+            return SimpleNamespace(
+                st_mode=junction_stat.st_mode,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", lstat_with_reparse_attribute)
+
+    with pytest.raises(FileExistsError, match="refusing to use redirecting path"):
+        apply_plan(build_plan(root, dt.date(2026, 1, 1), 1))
 
 
 def test_apply_rejects_broken_label_symlink_without_writing_target(tmp_path):

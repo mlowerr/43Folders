@@ -67,8 +67,9 @@ year counts as a full year:
 - **Never deletes or overwrites anything** — `00-Archive` folders and label
   text files may hold user content. Re-runs are idempotent: existing dirs are
   reused, existing txt files are skipped untouched.
-- Planned directory symlinks and non-regular label paths are rejected rather
-  than followed. The parent directory supplied via `--root` must be trusted.
+- Planned symlinks, Windows reparse points (including junctions), and
+  non-regular label paths are rejected rather than followed. The parent
+  directory supplied via `--root` must be trusted.
 - So it is always safe to re-run the generator over an existing tree to repair
   missing folders.
 
@@ -77,7 +78,8 @@ year counts as a full year:
 `--name` must not contain `<>:"/\|?*`, control characters, leading/trailing
 whitespace, trailing dots; must not be `.`/`..` or a Windows device name
 (CON/PRN/AUX/NUL/CONIN$/CONOUT$/COM1-9/LPT1-9, including superscript-digit
-variants). Names are limited to 255 characters. Generated names
+variants). Names must fit within both 255 UTF-8 bytes and 255 UTF-16 code
+units. Generated names
 (`00-Archive`, `YYYY`, `YYYY-MM`, `YYYY-MM-DD`) are always valid on every OS.
 
 ## Recipes
